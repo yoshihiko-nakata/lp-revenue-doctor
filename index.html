@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LP 売上フェルミ博士</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <style>
+    /* Font fallback only; avoid external font dependency for offline robustness */
+  </style>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand__title">LP 売上フェルミ博士</div>
+      <div class="brand__subtitle">URL × 業種 × 平均決済額 × 広告費 → フェルミ推定で売上を見える化（＋LP偏差値）</div>
+    </div>
+    <div class="topbar__actions">
+      <button id="btnReset" class="btn btn--ghost" type="button" title="入力をリセット">リセット</button>
+      <button id="btnCopyResult" class="btn btn--ghost" type="button" title="結果をJSONでコピー">結果コピー</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="panel panel--input">
+      <h2 class="panel__title">入力</h2>
+
+      <div class="form">
+        <label class="field">
+          <div class="field__label">a. 実在するウェブページ（LP）のURL</div>
+          <input id="inUrl" class="input" type="url" placeholder="https://example.com/lp" autocomplete="off" spellcheck="false" />
+          <div class="field__hint">※ https:// から入力してください（取得制限のあるLPは解析できない場合があります）</div>
+        </label>
+
+        <label class="field">
+          <div class="field__label">b. 業種・業態</div>
+          <select id="inIndustry" class="input">
+            <!-- populated by JS -->
+          </select>
+          <div class="field__hint">業種ごとに「だいたいのCPC（クリック単価）」と「だいたいの成約率」を変えます</div>
+        </label>
+
+        <div class="fieldGrid">
+          <label class="field">
+            <div class="field__label">c. 平均決済額（1回あたり）</div>
+            <input id="inAov" class="input" type="number" inputmode="numeric" min="0" step="1" placeholder="例）12000" />
+            <div class="field__hint">整数（円）で入力</div>
+          </label>
+
+          <label class="field">
+            <div class="field__label">d. 広告費（合計）</div>
+            <input id="inSpend" class="input" type="number" inputmode="numeric" min="0" step="1" placeholder="例）300000" />
+            <div class="field__hint">整数（円）で入力</div>
+          </label>
+        </div>
+
+        <div class="options">
+          <label class="check"><input id="optSound" type="checkbox" checked /> 効果音</label>
+          <label class="check"><input id="optFast" type="checkbox" /> 高速モード（演出短縮）</label>
+          <label class="check"><input id="optLinkCheck" type="checkbox" /> リンク切れサンプルチェック（少し遅くなります）</label>
+        </div>
+
+        <div class="actions">
+          <button id="btnStart" class="btn btn--primary" type="button">▶ START</button>
+          <button id="btnSample" class="btn btn--ghost" type="button">サンプル入力</button>
+        </div>
+
+        <details class="notes">
+          <summary>動作メモ（重要）</summary>
+          <ul>
+            <li>このゲームは「ブラウザだけでできる範囲」でLPを自動採点します（完全な人間評価ではありません）。</li>
+            <li>サイトのセキュリティ設定（WAF等）により、HTML取得がブロックされることがあります。その場合は偏差値を暫定値（50）で計算します。</li>
+            <li>売上推定はフェルミ推定です。正確な予測ではなく、意思決定の“当たりをつける”ための概算です。</li>
+          </ul>
+        </details>
+      </div>
+    </section>
+
+    <section class="panel panel--status">
+      <div class="panel__headerRow">
+        <h2 class="panel__title">ステータス（リアルタイム）</h2>
+        <div class="panel__headerActions">
+          <button id="btnClearLog" class="btn btn--ghost" type="button">クリア</button>
+          <button id="btnCopyLog" class="btn btn--ghost" type="button">コピー</button>
+        </div>
+      </div>
+      <div id="log" class="log" aria-live="polite"></div>
+    </section>
+
+    <section class="panel panel--result" id="resultPanel" hidden>
+      <h2 class="panel__title">結果</h2>
+
+      <div class="resultGrid">
+        <div class="card">
+          <div class="card__title">LP偏差値（スマホUI/UX）</div>
+          <div class="bigMetric">
+            <div class="bigMetric__value" id="outDev">--</div>
+            <div class="bigMetric__unit">偏差値</div>
+          </div>
+          <div class="subMetrics">
+            <div class="subMetric"><span class="subMetric__label">総合点</span><span class="subMetric__value" id="outPoints">--</span></div>
+            <div class="subMetric"><span class="subMetric__label">判定</span><span class="subMetric__value" id="outDiagMode">--</span></div>
+          </div>
+
+          <div class="bars" id="outCategoryBars"></div>
+          <div class="muted small" id="outTopFindings"></div>
+        </div>
+
+        <div class="card">
+          <div class="card__title">フェルミ推定：売上（広告→売上）</div>
+
+          <div class="moneyLine">
+            <div class="moneyLine__label">推定売上（ベース）</div>
+            <div class="moneyLine__value" id="outRevenueBase">--</div>
+          </div>
+          <div class="miniGrid">
+            <div class="mini">
+              <div class="mini__label">推定クリック数</div>
+              <div class="mini__value" id="outClicks">--</div>
+            </div>
+            <div class="mini">
+              <div class="mini__label">推定成約数</div>
+              <div class="mini__value" id="outOrders">--</div>
+            </div>
+            <div class="mini">
+              <div class="mini__label">推定ROAS</div>
+              <div class="mini__value" id="outRoas">--</div>
+            </div>
+          </div>
+
+          <div class="tableWrap">
+            <table class="table" id="outScenarioTable">
+              <thead>
+                <tr>
+                  <th>シナリオ</th>
+                  <th class="num">CPC</th>
+                  <th class="num">成約率</th>
+                  <th class="num">売上</th>
+                  <th class="num">ROAS</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- by JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="muted small">
+            ※「成約率」は、業種の目安 × LP偏差値による補正（使いやすいLPほど上がる想定）で計算しています。
+          </div>
+        </div>
+      </div>
+
+      <div class="doctor">
+        <div class="doctor__avatar" aria-hidden="true" id="doctorAvatar">
+          <!-- simple inline SVG -->
+          <svg viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="博士">
+            <rect x="10" y="10" width="100" height="100" rx="18" class="svgFace"/>
+            <circle cx="45" cy="55" r="8" class="svgEye"/>
+            <circle cx="75" cy="55" r="8" class="svgEye"/>
+            <rect x="30" y="75" width="60" height="10" rx="5" class="svgMouth"/>
+            <rect x="18" y="38" width="32" height="6" rx="3" class="svgGlass"/>
+            <rect x="70" y="38" width="32" height="6" rx="3" class="svgGlass"/>
+            <rect x="50" y="41" width="20" height="4" rx="2" class="svgGlass"/>
+            <rect x="42" y="20" width="36" height="10" rx="5" class="svgHair"/>
+          </svg>
+          <div class="doctor__name">フェルミ博士</div>
+        </div>
+
+        <div class="doctor__bubble">
+          <div class="doctor__title">博士の解説（どうやって売上を計算した？）</div>
+          <div id="doctorSpeech" class="doctor__speech" aria-live="polite"></div>
+          <div class="doctor__controls">
+            <button id="btnPrevExplain" class="btn btn--ghost" type="button">◀ 前へ</button>
+            <button id="btnNextExplain" class="btn btn--ghost" type="button">次へ ▶</button>
+          </div>
+        </div>
+      </div>
+
+      <details class="details" id="detailsItems">
+        <summary>45項目の内訳（1〜5点）を見る</summary>
+        <div id="outItems" class="items"></div>
+      </details>
+    </section>
+
+    <!-- hidden probe iframe for mobile rendering & measurements -->
+    <iframe id="probeFrame" class="probe" sandbox="allow-same-origin" title="probe"></iframe>
+  </main>
+
+  <footer class="footer">
+    <div class="muted small">
+      ※ 本ツールは「推定（フェルミ）」であり、結果の正確性を保証するものではありません。最終判断は必ず人間が行ってください。
+    </div>
+  </footer>
+
+  <script defer src="./app.js"></script>
+</body>
+</html>
